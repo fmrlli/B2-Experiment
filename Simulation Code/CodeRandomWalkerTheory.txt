@@ -1,0 +1,298 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class RandomWalker : MonoBehaviour
+{
+    private List<OneParticle> allParticles = new List<OneParticle>();
+    private int numOfTotalFrames;
+    public bool running = false;
+    private Coroutine coroutine;
+    private GameObject particle;
+    public static int dimension = 3;
+
+    public List<OneParticle> getAllParticles()
+    {
+        return allParticles;
+    }
+
+    public int getNumOfTotalFrames()
+    {
+        return numOfTotalFrames;
+    }
+
+    private List<OneParticle> removedParticles = new List<OneParticle>();
+
+    public void createNewConfig(int numOfParticles, int numOfTotalFrames, GameObject particle, float deltaTime, float mass, float gamma)
+    {
+        this.numOfTotalFrames = numOfTotalFrames;
+        this.particle = particle;
+
+        for (int i = 0; i < allParticles.Count; i++)
+        {
+            allParticles[i].deleteParticle();
+        }
+
+        allParticles.Clear();
+
+        System.Random random = new System.Random();
+
+        for (int i = 0; i < numOfParticles; i++)
+        {
+            float randomX = (float)(16 * random.NextDouble() - 8);
+            float randomY = (float)(16 * random.NextDouble() - 8);
+            float randomZ = (float)(16 * random.NextDouble() - 8);
+
+            Vector3 startPos = new Vector3(randomX, randomY, randomZ);
+
+            GameObject p = Instantiate(particle);
+
+            allParticles.Add(new OneParticle(mass, gamma, deltaTime, p.transform, startPos));
+        }
+
+        Debug.Log(allParticles.Count);
+    }
+
+    
+    public void runStopConfig(float secPerFrame)
+    {
+        for (int i = 0; i < removedParticles.Count; i++)
+        {
+            allParticles.Add(removedParticles[i]);
+            GameObject p = Instantiate(particle);
+            removedParticles[i].setNewParticle(p.transform);
+        }
+
+        if (running)
+        {
+            running = false;
+            StopCoroutine(coroutine);
+
+            removedParticles.Clear();
+
+            for (int i = 0; i < allParticles.Count; i++)
+            {
+                allParticles[i].resetToStartPosition();
+            }
+        } else
+        {
+            running = true;
+            coroutine = StartCoroutine(moveParticleOnce(secPerFrame));
+        }
+    }
+
+    IEnumerator moveParticleOnce(float waitTime)
+    {
+        for (int j = 0; j < numOfTotalFrames; j++)
+        {
+            yield return new WaitForSeconds(waitTime);
+
+            List<OneParticle> removeUs = new List<OneParticle>();
+            
+
+            for (int i = 0; i < allParticles.Count; i++)
+            {
+                allParticles[i].moveParticle(j);
+                if (!allParticles[i].isInBox(j))
+                {
+                    removeUs.Add(allParticles[i]);
+                }
+            }
+
+            for (int i = 0; i < removeUs.Count; i++)
+            {
+                removeUs[i].deleteParticle();
+                allParticles.Remove(removeUs[i]);
+                removedParticles.Add(removeUs[i]);
+            }
+        }
+
+        running = false;
+    }
+
+    public List<List<float>> doAnalysis()
+    {
+        List<List<float>> res = new List<List<float>>();
+        for (int i = 0; i < numOfTotalFrames; i++)
+        {
+            res.Add(new List<float>());
+        }
+
+        for (int x = 0; x < allParticles.Count; x++)
+        {
+            List<List<float>> preRes = new List<List<float>>();
+            for (int i = 0; i < numOfTotalFrames; i++)
+            {
+                preRes.Add(new List<float>());
+            }
+
+            for (int i = 0; i < numOfTotalFrames; i++)
+            {
+                for (int j = i + 1; j < numOfTotalFrames; j++)
+                {
+                    preRes[j - i].Add(Mathf.Pow(Vector3.Distance(allParticles[x].getPosInHistory(j), allParticles[x].getPosInHistory(i)), 2));
+                }
+            }
+
+            for (int i = 0; i < numOfTotalFrames; i++)
+            {
+                if (preRes[i].Count > 0)
+                {
+                    float sum = 0;
+                    for (int j = 0; j < preRes[i].Count; j++)
+                    {
+                        sum += preRes[i][j];
+                    }
+                    res[i].Add(sum / preRes[i].Count);
+                }
+            }
+        }
+
+        return res;
+    }
+
+    public List<float> doAnalysis1()
+    {
+        List<List<float>> preRes = new List<List<float>>();
+        for (int i = 0; i < numOfTotalFrames; i++)
+        {
+            preRes.Add(new List<float>());
+        }
+
+        for (int i = 0; i < allParticles.Count; i++)
+        {
+            OneParticle oneParticle = allParticles[i];
+
+            for (int j = 0; j < oneParticle.getHistorySize(); j++)
+            {
+                for (int k = j + 1; k < oneParticle.getHistorySize(); k++)
+                {
+                    preRes[k - j].Add(Mathf.Pow(Vector3.Distance(oneParticle.getPosInHistory(j), oneParticle.getPosInHistory(k)), 2));
+                }
+            }
+        }
+
+        List<float> res = new List<float>();
+        for (int i = 0; i < preRes.Count; i++)
+        {
+            if (preRes[i].Count == 0)
+            {
+                res.Add(0);
+                continue;
+            }
+
+            float sum = 0;
+            for (int j = 0; j < preRes[i].Count; j++)
+            {
+                sum += preRes[i][j];
+            }
+
+            res.Add(sum / preRes[i].Count);
+        }
+
+        return res;
+    }
+
+    public class OneParticle
+    {
+        private readonly float mass;
+        private readonly float gamma;
+        private readonly float deltaTime;
+
+        private Transform particle;
+        private Vector3 oldVel = Vector3.zero;
+        private List<Vector3> history = new List<Vector3>();
+
+
+        public OneParticle(float mass, float gamma, float deltaTime, Transform particle, Vector3 startPos)
+        {
+            this.mass = mass;
+            this.gamma = gamma;
+            this.deltaTime = deltaTime;
+            this.particle = particle;
+            history.Add(startPos);
+
+            particle.position = setDimPos(startPos);
+        }
+
+        public void moveParticle(int frame)
+        {
+            if (history.Count > frame)
+            {
+                particle.position = setDimPos(history[frame]);
+            } else
+            {
+                System.Random random = new System.Random();
+
+                float randomX = (float)(0.2 * random.NextDouble() - 0.1);
+                float randomY = (float)(0.2 * random.NextDouble() - 0.1);
+                float randomZ = (float)(0.2 * random.NextDouble() - 0.1);
+
+                Vector3 randomForce = new Vector3(randomX, randomY, randomZ);
+
+                oldVel = (-gamma * oldVel + randomForce) * deltaTime / mass + oldVel;
+                history.Add(oldVel * deltaTime + history[history.Count - 1]);
+
+                particle.position = setDimPos(history[history.Count - 1]);
+            }
+            
+        }
+
+        public bool isInBox(int frame)
+        {
+            if(Mathf.Abs(history[frame].x) > 10 || Mathf.Abs(history[frame].y) > 10 || Mathf.Abs(history[frame].z) > 10)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        public void deleteParticle()
+        {
+            Destroy(particle.gameObject);
+        }
+
+        public void resetToStartPosition()
+        {
+            particle.position = setDimPos(history[0]);
+        }
+
+        public void setNewParticle(Transform particle)
+        {
+            this.particle = particle;
+        }
+
+        private Vector3 setDimPos(Vector3 pos3D)
+        {
+            if (RandomWalker.dimension == 3)
+            {
+                return pos3D;
+            }
+
+            Vector3 posXD = pos3D;
+            posXD.z = -9.9f;
+            if (RandomWalker.dimension == 2)
+            {
+                return posXD;
+            }
+
+            posXD.y = 0f;
+            return posXD;
+        }
+
+        public Vector3 getPosInHistory(int frame)
+        {
+            if (history.Count <= frame)
+            {
+                return Vector3.zero;
+            }
+            return setDimPos(history[frame]);
+        }
+
+        public int getHistorySize()
+        {
+            return history.Count;
+        }
+    }
+}

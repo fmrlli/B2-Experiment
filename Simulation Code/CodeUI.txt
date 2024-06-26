@@ -1,0 +1,293 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using System.IO;
+
+public class UIController : MonoBehaviour
+{
+    public GameObject particle;
+    public GameObject filler;
+
+    public TMP_InputField numOfParticles;
+    public TMP_InputField numOfTotalFrames;
+    public TMP_InputField deltaTime;
+    public TMP_InputField mass;
+    public TMP_InputField gamma;
+
+    public TMP_InputField secPerFrame;
+    public TMP_InputField savePath;
+
+    public Toggle toggle3D;
+    public Toggle toggle2D;
+    public Toggle toggle1D;
+
+    public GameObject analysisWindow;
+    private bool analysisWindowVisible = false;
+
+    public GameObject coordSyst;
+    public GameObject pixel;
+
+    List<GameObject> pixelGraph = new List<GameObject>();
+
+    RandomWalker randomWalker;
+
+    public GameObject box3Da;
+    public GameObject box3Db;
+    public GameObject box3Dc;
+    public GameObject box3Dd;
+    public GameObject box3De;
+    public GameObject box3Df;
+    public GameObject box3Dg;
+    public GameObject box3Dh;
+
+    public GameObject box2Da;
+    public GameObject box2Db;
+
+    public TMP_Text textMaxX;
+    public TMP_Text textMaxY;
+
+    private void Start()
+    {
+        randomWalker = filler.GetComponent<RandomWalker>();
+    }
+
+    public void createNewInstance()
+    {
+        int numOfParticlesNum;
+        int numOfTotalFramesNum;
+        float deltaTimeNum;
+        float massNum;
+        float gammaNum;
+
+        if (!int.TryParse(numOfParticles.text.Trim(), out numOfParticlesNum))
+        {
+            return;
+        }
+        if (!int.TryParse(numOfTotalFrames.text.Trim(), out numOfTotalFramesNum))
+        {
+            return;
+        }
+        if (!float.TryParse(deltaTime.text.Trim(), out deltaTimeNum))
+        {
+            return;
+        }
+        if (!float.TryParse(mass.text.Trim(), out massNum))
+        {
+            return;
+        }
+        if (!float.TryParse(gamma.text.Trim(), out gammaNum))
+        {
+            return;
+        }
+
+        randomWalker.createNewConfig(numOfParticlesNum, numOfTotalFramesNum, particle, deltaTimeNum, massNum, gammaNum);
+    }
+
+    public void runStopInstance()
+    {
+        float secPerFrameNum;
+        if (!float.TryParse(secPerFrame.text.Trim(), out secPerFrameNum))
+        {
+            return;
+        }
+
+        randomWalker.runStopConfig(secPerFrameNum);
+    }
+
+    public void changeDimension(int dim)
+    {
+        if (dim == 3)
+        {
+            if (!toggle3D.isOn)
+            {
+                return;
+            }
+
+            deActivatePartsOfBox(3, true);
+            deActivatePartsOfBox(2, true);
+            toggle2D.isOn = false;
+            toggle1D.isOn = false;
+        } else if (dim == 2)
+        {
+            if (!toggle2D.isOn)
+            {
+                return;
+            }
+
+            deActivatePartsOfBox(3, false);
+            deActivatePartsOfBox(2, true);
+            toggle3D.isOn = false;
+            toggle1D.isOn = false;
+        } else 
+        {
+            if (!toggle1D.isOn)
+            {
+                return;
+            }
+
+            deActivatePartsOfBox(3, false);
+            deActivatePartsOfBox(2, false);
+            toggle3D.isOn = false;
+            toggle2D.isOn = false;
+        }
+
+        RandomWalker.dimension = dim;
+    }
+
+    private void deActivatePartsOfBox(int dim, bool vis)
+    {
+        if (dim == 3)
+        {
+            box3Da.SetActive(vis);
+            box3Db.SetActive(vis);
+            box3Dc.SetActive(vis);
+            box3Dd.SetActive(vis);
+            box3De.SetActive(vis);
+            box3Df.SetActive(vis);
+            box3Dg.SetActive(vis);
+            box3Dh.SetActive(vis);
+        } else
+        {
+            box2Da.SetActive(vis);
+            box2Db.SetActive(vis);
+        }
+    }
+
+    public void showAnalysisWindow()
+    {
+        if (analysisWindowVisible)
+        {
+            analysisWindow.SetActive(false);
+            analysisWindowVisible = false;
+
+            for (int i = 0; i < pixelGraph.Count; i++)
+            {
+                Destroy(pixelGraph[i]);
+            }
+
+            pixelGraph.Clear();
+        } else
+        {
+            analysisWindow.SetActive(true);
+            analysisWindowVisible = true;
+
+            List<float> res = randomWalker.doAnalysis1();
+
+            float coordX = coordSyst.GetComponent<RectTransform>().sizeDelta.x;
+            float coordY = coordSyst.GetComponent<RectTransform>().sizeDelta.y;
+            
+            float unitX = coordX / res.Count;
+            float maxY = -1;
+
+            for (int i = 0; i < res.Count; i++)
+            {
+                if (res[i] > maxY)
+                {
+                    maxY = res[i];
+                }
+            }
+
+            textMaxX.text = "" + res.Count;
+            textMaxY.text = "" + maxY;
+
+            float unitY = coordY / maxY;
+
+            for (int i = 0; i < res.Count; i++)
+            {
+                GameObject px = Instantiate(pixel);
+                px.transform.SetParent(coordSyst.transform, false);
+
+                pixelGraph.Add(px);
+
+                px.transform.GetComponent<RectTransform>().localPosition = new Vector3(unitX * i - coordX, unitY * res[i] - coordY, 0);
+                
+            }
+        }
+    }
+
+    public void saveToFile()
+    {
+        randomWalker.running = true;
+        runStopInstance();
+        string filePath = Path.Combine(Application.persistentDataPath, savePath.text); // "/Users/jonathantekasala/Desktop/Praktikum_B2/outPutUnity.txt"
+
+        using (StreamWriter writer = new StreamWriter(filePath, true))
+        {
+            List<RandomWalker.OneParticle> allParticles = randomWalker.getAllParticles();
+            Debug.Log(allParticles.Count);
+            if (toggle3D.isOn) { 
+                for (int i = 0; i < allParticles.Count; i++)
+                {
+                    writer.Write("x_" + i + "\ty_" + i + "\tz_" + i + "\t");
+                }
+                writer.Write("\n");
+
+                for (int i = 0; i < randomWalker.getNumOfTotalFrames(); i++)
+                {
+                    for (int j = 0; j < allParticles.Count; j++)
+                    {
+                        if (j < allParticles[j].getHistorySize())
+                        {
+                            Vector3 pos = allParticles[j].getPosInHistory(i);
+                            writer.Write(pos.x + "\t" + pos.y + "\t" + pos.z + "\t");
+                        } else
+                        {
+                            writer.Write("###");
+                        }
+                    }
+
+                    writer.Write("\n");
+                }
+            } else if (toggle2D.isOn)
+            {
+                for (int i = 0; i < allParticles.Count; i++)
+                {
+                    writer.Write("x_" + i + "\ty_" + i + "\t");
+                }
+                for (int i = 0; i < randomWalker.getNumOfTotalFrames(); i++)
+                {
+                    for (int j = 0; j < allParticles.Count; j++)
+                    {
+                        if (j < allParticles[j].getHistorySize())
+                        {
+                            Vector3 pos = allParticles[j].getPosInHistory(i);
+                            writer.Write(pos.x + "\t" + pos.y + "\t" + "\t");
+                        }
+                        else
+                        {
+                            writer.Write("##");
+                        }
+                    }
+
+                    writer.Write("\n");
+                }
+            } else
+            {
+                for (int i = 0; i < allParticles.Count; i++)
+                {
+                    writer.Write("x_" + i + "\t");
+                }
+                for (int i = 0; i < randomWalker.getNumOfTotalFrames(); i++)
+                {
+                    for (int j = 0; j < allParticles.Count; j++)
+                    {
+                        if (j < allParticles[j].getHistorySize())
+                        {
+                            Vector3 pos = allParticles[j].getPosInHistory(i);
+                            writer.Write(pos.x + "\t");
+                        }
+                        else
+                        {
+                            writer.Write("#");
+                        }
+                    }
+
+                    writer.Write("\n");
+                }
+            }
+        }
+
+    }
+}
